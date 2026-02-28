@@ -34,7 +34,7 @@ uv run python content_writer.py "Write a Twitter thread about the future of codi
 The agent is configured by files on disk, not code:
 
 ```
-content-builder-agent/
+content-writer/
 ├── AGENTS.md                    # Brand voice & style guide
 ├── subagents.yaml               # Subagent definitions
 ├── skills/
