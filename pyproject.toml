@@ -1,0 +1,14 @@
+[project]
+name = "content-builder-agent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "deepagents>=0.4.4",
+    "google-genai>=1.65.0",
+    "pillow>=12.1.1",
+    "pyyaml>=6.0.3",
+    "rich>=14.3.3",
+    "tavily-python>=0.7.22",
+]
