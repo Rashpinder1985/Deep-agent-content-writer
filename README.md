@@ -15,8 +15,7 @@ The `content_writer.py` script shows how to combine these into a working agent.
 
 ```bash
 # Set API keys
-export ANTHROPIC_API_KEY="..."
-export GOOGLE_API_KEY="..."      # For image generation
+export OPENAI_API_KEY="..."      # For the main agent, subagents, and image generation
 export TAVILY_API_KEY="..."      # For web search (optional)
 
 # Run (uv automatically installs dependencies on first run)
@@ -64,7 +63,7 @@ agent = create_deep_agent(
     skills=["./skills/"],                          # ← Middleware loads on demand
     tools=[generate_cover, generate_social_image], # ← Image generation tools
     subagents=load_subagents("./subagents.yaml"),  # ← See note below
-    backend=FilesystemBackend(root_dir="./"),
+    backend=FilesystemBackend(root_dir="./", virtual_mode=False),
 )
 ```
 
@@ -77,7 +76,7 @@ subagents=[
     {
         "name": "researcher",
         "description": "Research topics before writing...",
-        "model": "anthropic:claude-haiku-4-5-20251001",
+        "model": "openai:gpt-4o-mini",
         "system_prompt": "You are a research assistant...",
         "tools": [web_search],
     }
@@ -88,7 +87,7 @@ subagents=[
 1. Agent receives task → loads relevant skill (blog-post or social-media)
 2. Delegates research to `researcher` subagent → saves to `research/`
 3. Writes content following skill workflow → saves to `blogs/` or `linkedin/`
-4. Generates cover image with Gemini → saves alongside content
+4. Generates cover image with OpenAI (optional) → saves alongside content
 
 ## Output
 
@@ -125,7 +124,7 @@ description: Use this skill when writing email newsletters
 ```yaml
 editor:
   description: Review and improve drafted content
-  model: anthropic:claude-haiku-4-5-20251001
+  model: openai:gpt-4o-mini
   system_prompt: |
     You are an editor. Review the content and suggest improvements...
   tools: []
@@ -140,6 +139,7 @@ This agent has filesystem access and can read, write, and delete files on your m
 ## Requirements
 
 - Python 3.11+
-- `ANTHROPIC_API_KEY` - For the main agent
-- `GOOGLE_API_KEY` - For image generation (uses Gemini's [Imagen / "nano banana"](https://ai.google.dev/gemini-api/docs/image-generation) via `gemini-2.5-flash-image`)
+- `OPENAI_API_KEY` - For the main agent, subagents, and image generation
 - `TAVILY_API_KEY` - For web search (optional, research still works without it)
+
+**Image generation:** Uses OpenAI (`gpt-image-1-mini` or `dall-e-2`). Enable image models in your [OpenAI API settings](https://platform.openai.com/settings/organization) if needed. Content is always written; images are optional.

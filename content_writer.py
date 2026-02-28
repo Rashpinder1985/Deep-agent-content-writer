@@ -5,38 +5,39 @@ warnings.filterwarnings('ignore', message='Core Pydantic v1 functionality')
 """
 Content Builder Agent
 
-A content writer agent configured entirely through files on disk:
+A content writer agent configured through files on disk:
 - AGENTS.md defines brand voice and style guide
-- skills/ provides specialized workflows (blog posts, social media)
-- skills/*/scripts/ provides tools bundled with each skill
-- subagents handle research and other delegated tasks
+- skills/ provides workflows (blog posts, social media)
+- subagents handle research and delegated tasks
 
 Usage:
     uv run python content_writer.py "Write a blog post about AI agents"
     uv run python content_writer.py "Create a LinkedIn post about prompt engineering"
 """
-import asyncio 
-import os 
+import asyncio
+import base64
+import os
 import sys
-from pathlib import Path 
-from typing import Literal 
+from pathlib import Path
+from typing import Literal
 
-import yaml 
+import yaml
 
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage 
-from langchain_core.tools import tool 
-from rich.console import Console 
-from rich.live import Live 
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.tools import tool
+from langchain_openai import ChatOpenAI
+from openai import OpenAI
+from rich.console import Console
+from rich.live import Live
 from rich.markdown import Markdown
-from rich.panel import Panel 
+from rich.panel import Panel
 from rich.spinner import Spinner
-from rich.text import Text 
+from rich.text import Text
 
-from deepagents import create_deep_agent 
-from deepagents.backends import FilesystemBackend 
+from deepagents import create_deep_agent
+from deepagents.backends import FilesystemBackend
 
 from tavily import TavilyClient
-from google import genai
 
 EXAMPLE_DIR = Path(__file__).parent
 console = Console()
@@ -56,7 +57,7 @@ def web_search(
         topic: "general" for most queries, "news" for current events
     
     Returns:
-        seearch results with titles, URLs, and content excerpts
+        Search results with titles, URLs, and content excerpts
     '''
     try:
         api_key = os.environ.get('TAVILY_API_KEY') 
@@ -69,7 +70,32 @@ def web_search(
         return {'error': f'search failed: {e}'}
     
 
-@tool 
+def _generate_image(prompt: str, output_path: Path) -> str:
+    """Generate an image using OpenAI API (gpt-image-1-mini or dall-e-2)."""
+    api_key = os.environ.get('OPENAI_API_KEY')
+    if not api_key:
+        return 'Error: OPENAI_API_KEY not set'
+
+    client = OpenAI(api_key=api_key)
+    for model in ('gpt-image-1-mini', 'dall-e-2'):
+        try:
+            kwargs = {'model': model, 'prompt': prompt, 'n': 1, 'response_format': 'b64_json'}
+            if model.startswith('dall-e'):
+                kwargs['size'] = '1024x1024'
+            response = client.images.generate(**kwargs)
+            if response.data and len(response.data) > 0:
+                image_data = base64.b64decode(response.data[0].b64_json)
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_bytes(image_data)
+                return f'Image saved to {output_path}'
+        except Exception as e:
+            if '403' in str(e) or 'model_not_found' in str(e) or 'PermissionDenied' in str(type(e).__name__):
+                continue
+            return f'Error: {e}'
+    return 'Image generation not available (enable image models in OpenAI API settings)'
+
+
+@tool
 def generate_cover(prompt: str, slug: str) -> str:
     """Generate a cover image for a blog post.
 
@@ -78,25 +104,14 @@ def generate_cover(prompt: str, slug: str) -> str:
         slug: Blog post slug. Image saves to blogs/<slug>/hero.png
     """
     try:
-        client = genai.Client()
-        response = client.models.generate_content(
-            model='gemini-2.5-flash-image', 
-            contents=[prompt]
-        )
-        for part in response.parts:
-            if part.inline_data is not None:
-                image = part.as_image()
-                output_path = EXAMPLE_DIR / 'blogs' / slug / "hero.png" 
-                output_path.parent.mkdir(parents=True, exist_ok=True)
-                image.save(str(output_path))
-                return f'Image saved to {output_path}'
-            
-        return 'No image generated'
+        output_path = EXAMPLE_DIR / 'blogs' / slug / 'hero.png'
+        return _generate_image(prompt, output_path)
     except Exception as e:
         return f'Error: {e}'
 
-@tool 
-def generate_social_image(prompt: str, platform:str, slug:str) -> str:
+
+@tool
+def generate_social_image(prompt: str, platform: str, slug: str) -> str:
     """Generate an image for a social media post.
 
     Args:
@@ -105,19 +120,8 @@ def generate_social_image(prompt: str, platform:str, slug:str) -> str:
         slug: Post slug. Image saves to <platform>/<slug>/image.png
     """
     try:
-        client = genai.client()
-        response = client.models.generagte_content(
-            model='gemini-2.5-flash-image', 
-            contents=[prompt]
-        )
-        for part in response.parts:
-            if part.inline_data is not None:
-                image=part.as_image()
-                output_path=EXAMPLE_DIR/platform/slug/"image.png"
-                image.save(str(output_path))
-                return f'Image saved to {output_path}'
-            
-        return 'No image generated'
+        output_path = EXAMPLE_DIR / platform / slug / 'image.png'
+        return _generate_image(prompt, output_path)
     except Exception as e:
         return f'Error: {e}'
     
@@ -153,11 +157,12 @@ def load_subagents(config_path: Path) -> list:
 def create_content_writer():
     """Create a content writer agent configured by filesystem files."""
     return create_deep_agent(
-        memory=['./AGENTS.md'], # loaded by MemoryMiddleware 
-        skills=['./skills/'], # loaded by SkillsMiddleware 
-        tools=[generate_cover, generate_social_image],  # Image generation
-        subagents=load_subagents(EXAMPLE_DIR/'subagents.yaml'), # custom helper 
-        backend=FilesystemBackend(root_dir=EXAMPLE_DIR),
+        memory=['./AGENTS.md'],
+        skills=['./skills/'],
+        tools=[generate_cover, generate_social_image],
+        subagents=load_subagents(EXAMPLE_DIR / 'subagents.yaml'),
+        backend=FilesystemBackend(root_dir=EXAMPLE_DIR, virtual_mode=False),
+        model=ChatOpenAI(model='gpt-4o-mini', temperature=0.7),
     )
 
 class AgentDisplay:
@@ -175,7 +180,7 @@ class AgentDisplay:
     def print_message(self, msg):
         '''Print a message with nice formatting'''
         if isinstance(msg, HumanMessage):
-            console.print(Panel(msg.content), title='you', border_style='blue') 
+            console.print(Panel(msg.content, title='you', border_style='blue')) 
         
         elif isinstance(msg, AIMessage):
             content = msg.content 
@@ -210,8 +215,7 @@ class AgentDisplay:
             name = getattr(msg, 'name', '')
             if name in ('generate_cover', 'generate_social_image'):
                 if 'saved' in msg.content.lower():
-                    if "saved" in msg.content.lower():
-                        console.print("  [green]✓ Image saved[/]")
+                    console.print("  [green]✓ Image saved[/]")
                 else:
                     console.print(f"  [red]✗ Image failed: {msg.content}[/]")
             elif name == 'write_file':
@@ -227,7 +231,7 @@ async def main():
     if len(sys.argv) > 1:
         task = ' '.join(sys.argv[1:])
     else:
-        task = 'Write a blog post about how AI agents are transforming software developent' 
+        task = 'Write a blog post about how AI agents are transforming software development' 
 
     console.print()
     console.print("[bold blue]Content Builder Agent[/]")

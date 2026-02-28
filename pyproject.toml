@@ -1,13 +1,13 @@
 [project]
 name = "content-builder-agent"
 version = "0.1.0"
-description = "Add your description here"
+description = "Content writing agent for blog posts and social media using OpenAI"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.11"
 dependencies = [
     "deepagents>=0.4.4",
-    "google-genai>=1.65.0",
-    "pillow>=12.1.1",
+    "langchain-openai>=0.3.0",
+    "openai>=1.0.0",
     "pyyaml>=6.0.3",
     "rich>=14.3.3",
     "tavily-python>=0.7.22",
